@@ -1,0 +1,1 @@
+ffmpeg -r 1 -loop 1 -i background_source_image.jpg -i source_audio.mp3 -acodec copy -r 1 -shortest -vf scale=1280:720 output_video.mp4

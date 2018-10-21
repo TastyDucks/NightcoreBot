@@ -20,22 +20,22 @@ import time
 try:
     import bs4
 except ImportError:
-    Log("Required dependency Beautiful Soup 4 is not installed.", 4)
+    Log("Required dependency \"Beautiful Soup 4\" is not installed.", 4)
     sys.exit()
 try:
-    import ffmpeg
+    import ffmpy
 except ImportError:
-    Log("Required dependency ffmpeg-python is not installed.", 4)
+    Log("Required dependency \"ffmpy\" is not installed.", 4)
     sys.exit()
 try:
     import pydub
 except ImportError:
-    Log("Required dependency pydub is not installed.", 4)
+    Log("Required dependency \"pydub\" is not installed.", 4)
     sys.exit()
 try:
     import pytube
 except ImportError:
-    Log("Required dependency pytube is not installed.", 4)
+    Log("Required dependency \"pytube\" is not installed.", 4)
     sys.exit()
 
 #
@@ -43,6 +43,8 @@ except ImportError:
 #
 
 NightcoreBotVersion = "1.0"
+DefaultConfigFile = "{\n    \"VideoDimensions\":\n    {\n        \"Height\": 720,\n        \"Width\": 1280\n    },\n    \"SpeedupPercentage\":\n    {\n        \"LowerBound\": 20,\n        \"UpperBound\": 20\n    },\n    \"BackgroundSource\": \"Backgrounds\",\n    \"UploadTitlePrefix\": \"▶️ 🎵 \",\n    \"UploadTitleSuffix\": \" 🎶\"\n}"
+DefaultSecretsFile = "{\n    \"web\": {\n      \"client_id\": \"[[INSERT CLIENT ID HERE]]\",\n      \"client_secret\": \"[[INSERT CLIENT SECRET HERE]]\",\n      \"redirect_uris\": [],\n      \"auth_uri\": \"https://accounts.google.com/o/oauth2/auth\",\n      \"token_uri\": \"https://accounts.google.com/o/oauth2/token\"\n    }\n  }"
 
 #
 # Functions
@@ -55,8 +57,8 @@ def CheckCoreFiles(Overwrite = False):
     if not os.path.isfile("NightcoreBot.cfg"):
         Log("The configuration file does not exist, creating...", 2)
         try:
-            with open("NightcoreBot.cfg", "w") as File:
-                File.write("{\n    \"SpeedupPercentage\":\n    {\n        \"LowerBound\": 16,\n        \"UpperBound\": 32\n    },\n    \"BackgroundSource\": \"background.jpg\"\n}")
+            with open("NightcoreBot.cfg", "w", encoding="utf-8") as File:
+                File.write(DefaultConfigFile)
         except IOError:
             Log("IOError: unable to create configuration file.", 4)
             sys.exit()
@@ -64,14 +66,14 @@ def CheckCoreFiles(Overwrite = False):
         Log("The client secrets file does not exist, creating...", 2)
         try:
             with open("client_secrets.json", "w") as File:
-                File.write("{\n    \"web\": {\n      \"client_id\": \"[[INSERT CLIENT ID HERE]]\",\n      \"client_secret\": \"[[INSERT CLIENT SECRET HERE]]\",\n      \"redirect_uris\": [],\n      \"auth_uri\": \"https://accounts.google.com/o/oauth2/auth\",\n      \"token_uri\": \"https://accounts.google.com/o/oauth2/token\"\n    }\n  }")
+                File.write(DefaultSecretsFile)
         except IOError:
             Log("IOError: unable to create client secrets file.", 4)
             sys.exit()
     if Overwrite:
         try:
-            with open("NightcoreBot.cfg", "w") as File:
-                File.write("{\n    \"SpeedupPercentage\":\n    {\n        \"LowerBound\": 16,\n        \"UpperBound\": 32\n    },\n    \"BackgroundSource\": \"background.jpg\"\n}")
+            with open("NightcoreBot.cfg", "w", encoding="utf-8") as File:
+                File.write(DefaultConfigFile)
         except IOError:
             Log("IOError: unable to create configuration file.", 4)
             sys.exit()
@@ -88,11 +90,6 @@ def Exit():
     Graceful halt.
     """
     Log("NightcoreBot stopped.", 2)
-
-def FetchSource(Source):
-    """
-    Load or download the source of a single audio sample.
-    """
 
 def Log(Message=None, LogLevel=1):
     """
@@ -129,44 +126,70 @@ def Log(Message=None, LogLevel=1):
 
 def MakeVideo(SourceType, Source):
     """
-    Combine the input audio with the BackgroundSource image defined in the configuration, and perform the specified action(s) with the resulting video.
+    Combine the input audio with the BackgroundSource image defined in the configuration, and returns the source of the output video.
     """
 
     if SourceType == "Y":
         Audio, Title = Download(False, Source)
+        FileName = "NightcoreBot Mix № {0}".format(time.strftime("%Y-%m-%d %H:%M:%S"))
         raise Exception("WIP") # TODO: Finish this.
     if SourceType == "Q":
         Audio, Title = Download(False, Source)
+        FileName = Source
         raise Exception("WIP") # TODO: Finish this too.
     if SourceType == "F":
         FileName, FileExtension = os.path.splitext(Source)
-        if FileExtension != ".mp3":
-            Log("Unsupported file extension \"{0}\". NightcoreBot only supports .mp3 files.".format(FileExtension), 3)
         try:
             Audio = pydub.AudioSegment.from_file(Source, format="mp3")
-        except Exception:
-            Log("Unable to decode audio file.", 2)
+        except Exception as E:
+            Log("Unable to decode audio file:\n{0}".format(E), 3)
     NewAudio = ProcessAudio(Audio)
-    NewAudio.export("{0}.mp3".format(FileName), format="mp3", tags={"artist": "NightcoreBot {0}".format(NightcoreBotVersion), "album": "NightcoreBot\'s Remixes", "year": time.strftime("%Y")})
+    NewAudio.export("temp.mp3", format="mp3") # Create temporary audio file for ffmpy to work with.
+    try:
+        with open("NightcoreBot.cfg", "r", encoding="utf-8") as File: # Load various settings from config
+            Config = json.load(File)
+            BackgroundImageSource = Config["BackgroundSource"]
+            VideoWidth = Config["VideoDimensions"]["Width"]
+            VideoHeight = Config["VideoDimensions"]["Height"]
+    except IOError:
+        Log("IOError: unable to read configuration file.", 3)
+    except Exception as E:
+        Log("Unable to parse contents of configuration file:\n{0}".format(E))
+    if os.path.isfile(BackgroundImageSource):
+        BackgroundImage = BackgroundImageSource
+    else:
+        BackgroundImage = "{0}/{1}".format(BackgroundImageSource, random.choice(os.listdir(BackgroundImageSource)))
+    FF = ffmpy.FFmpeg(inputs={"{0}".format(BackgroundImage): ["-r", "1", "-loop", "1"], "temp.mp3": None}, outputs={"{0}.mp4".format(FileName): ["-acodec", "copy", "-r", "1", "-shortest", "-vf", "scale={0}:{1}".format(VideoWidth, VideoHeight)]})
+    try:
+        FF.run()
+    except Exception as E:
+        Log("Unable to encode video:\n{0}".format(E), 3)
+        return None
+    os.remove("temp.mp3") # Delete temporary audio file.
+    return "{0}.mp4".format(FileName)
 
 def ProcessAudio(Audio):
     """
-    Pitch-shift and speed up ("nightcoreify") the input audio; returns audio.
+    Pitch-shift and speed up ("nightcoreify") the input audio; returns new audio.
     """
     try:
-        with open("NightcoreBot.cfg", "r") as File:
+        with open("NightcoreBot.cfg", "r", encoding="utf-8") as File:
             Config = json.load(File)
         Lower = Config["SpeedupPercentage"]["LowerBound"]
         Upper = Config["SpeedupPercentage"]["UpperBound"]
-    except Exception:
-        Log("Unable to parse contents of configuration file, overwriting with defaults...", 2)
-        CheckCoreFiles(True)
+    except Exception as E:
+        Log("Unable to parse contents of configuration file:\n{0}".format(E), 3)
+        sys.exit()
     if Lower > Upper:
         Log("LowerBound in SpeedupPercentage is greater than UpperBound. Check configuration file.", 4)
         sys.exit()
     ShiftPercentage = 1 + 0.01 * random.randint(Lower, Upper)
-    NewAudio = Audio._spawn(Audio.raw_data, overrides={"frame_rate": int(Audio.frame_rate * ShiftPercentage)})
-    return NewAudio.set_frame_rate(Audio.frame_rate)
+    try:
+        NewAudio = Audio._spawn(Audio.raw_data, overrides={"frame_rate": int(Audio.frame_rate * ShiftPercentage)})
+        NewAudio = NewAudio.set_frame_rate(Audio.frame_rate)
+        return NewAudio
+    except Exception as E:
+        Log("Error processing audio:\n{0}".format(E), 3)
 
 def Save(Video):
     """
@@ -183,12 +206,6 @@ def Upload(Video):
 #
 # Mainline code
 #
-
-atexit.register(Exit)
-
-Log("NightcoreBot started.")
-
-CheckCoreFiles()
 
 Parser = argparse.ArgumentParser(description="NightcoreBot: Automatically create Nightcore, and (optionally) upload it to Youtube.", epilog="NightcoreBot version: {0}. Visit http://pkre.co/Projects/NightcoreBot/ for more information.".format(NightcoreBotVersion))
 SourceTypeGroup = Parser.add_mutually_exclusive_group(required=True)
@@ -210,8 +227,14 @@ elif not Arguments.Save and Arguments.Upload:
 elif Arguments.Save and Arguments.Upload:
     Actions = 3
 else:
-    Parser.error("WOAH! This program won't do anything if you don't choose an option for what to do with the nightcore remix... Use either \"-s\" to save locally, \"-u\" to upload to Youtube, or both.")
+    Parser.error("This program won't do anything if you don't choose an option for what to do with the nightcore remix... Use either \"-s\" to save locally, \"-u\" to upload to Youtube, or both.")
     sys.exit()
+
+atexit.register(Exit)
+
+Log("NightcoreBot started.")
+
+CheckCoreFiles()
 
 SourceList = []
 
@@ -258,11 +281,11 @@ for Source in SourceList:
                 Log("^ \"{0}\"".format(URL))
             else:
                 Log("* \"{0}\"".format(Source), 3)
-    except:
-        Log("X {0}".format(Source), 2)
+    except Exception as E:
+        Log("X {0}:\n{1}".format(Source, E), 2)
 
 RunTime = round(time.time() - StartTime, 2)
 UploadMessage = ""
 if VideosUploaded > 0:
     UploadMessage = "Uploaded {0}/{1} videos.".format(VideosUploaded, len(SourceList))
-Log("Done in {0} seconds. Mixed {1}/{2} requests. {3}".format(RunTime, VideosMixed, len(SourceList), UploadMessage))
+Log("Done in {0} seconds. Successfully mixed {1}/{2} requests. {3}".format(RunTime, VideosMixed, len(SourceList), UploadMessage))

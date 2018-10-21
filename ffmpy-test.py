@@ -1,0 +1,3 @@
+import ffmpy
+FF = ffmpy.FFmpeg(inputs={"{0}".format("BgImg.jpg"): ["-r", "1", "-loop", "1"], "temp.mp3": None}, outputs={"{0}.mp4".format("OutputVideo"): ["-acodec", "copy", "-r", "1", "-shortest", "-vf", "scale={0}:{1}".format("1280", "720"), "drawtext=\"fontfile=Comic Sans MS.ttf: text=\"NightcoreBot\": fontfolor=white: fontsize=24: box=1: boxcolor=black@0.5: boxborderw=5: x=(w-text_w)/2: y=(h-text_h)/2"]})
+print(FF.cmd)
